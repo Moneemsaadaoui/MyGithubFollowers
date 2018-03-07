@@ -4,16 +4,28 @@ package rrdl.netapp.Controllers.Fragments;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
+import android.support.v4.widget.SwipeRefreshLayout;
+import android.support.v7.widget.LinearLayoutManager;
+import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import com.bumptech.glide.Glide;
+
+import java.util.ArrayList;
 import java.util.List;
 
+import io.reactivex.disposables.Disposable;
+import io.reactivex.functions.Function;
+import io.reactivex.observers.DisposableObserver;
 import rrdl.netapp.Models.GithubUser;
 import rrdl.netapp.R;
 import rrdl.netapp.Utils.GithubCalls;
+import rrdl.netapp.Utils.GithubStreams;
+import rrdl.netapp.Utils.GithubUserAdapter;
 import rrdl.netapp.Utils.NetworkAsyncTask;
 
 import butterknife.BindView;
@@ -23,9 +35,16 @@ import butterknife.OnClick;
 /**
  * A simple {@link Fragment} subclass.
  */
-public class MainFragment extends Fragment implements NetworkAsyncTask.Listeners,GithubCalls.Callbacks {
+public class MainFragment extends Fragment{
 
-    @BindView(R.id.fragment_main_textview) TextView textView;
+    // FOR DESIGN
+    @BindView(R.id.fragment_main_recycler_view) RecyclerView recyclerView;
+    @BindView(R.id.fragment_main_swipe_container) SwipeRefreshLayout swipeRefreshLayout;
+
+    //FOR DATA
+    private Disposable disposable;
+    private List<GithubUser> githubUsers;
+    private GithubUserAdapter adapter;
 
     public MainFragment() { }
 
@@ -33,72 +52,72 @@ public class MainFragment extends Fragment implements NetworkAsyncTask.Listeners
     public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         View view = inflater.inflate(R.layout.fragment_main, container, false);
         ButterKnife.bind(this, view);
+        this.configureRecyclerView();
+        this.configureSwipeRefreshLayout();
+        this.executeHttpRequestWithRetrofit();
         return view;
     }
 
-
-    @OnClick(R.id.fragment_main_button)
-    public void submit(View view) {
-        this.executeHttpRequestWithRetrofit();
-    }
-
-
-    private void executeHttpRequest(){
-        new NetworkAsyncTask(this).execute("https://api.github.com/users/moneemsaadaoui/followers");
-    }
-
     @Override
-    public void onPreExecute() {
-        this.updateUIWhenStartingHTTPRequest();
+    public void onDestroy() {
+        super.onDestroy();
+        this.disposeWhenDestroy();
     }
 
-    @Override
-    public void onPreExectue() {
+    // -----------------
+    // CONFIGURATION
+    // -----------------
 
+    private void configureRecyclerView(){
+        this.githubUsers = new ArrayList<>();
+        // Create adapter passing in the sample user data
+        this.adapter = new GithubUserAdapter(this.githubUsers, Glide.with(this));
+        // Attach the adapter to the recyclerview to populate items
+        this.recyclerView.setAdapter(this.adapter);
+        // Set layout manager to position the items
+        this.recyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
     }
 
-    @Override
-    public void doInBackground() { }
-
-    @Override
-    public void onPostExecute(String json) {
-        this.updateUIWhenStopingHTTPRequest(json);
+    private void configureSwipeRefreshLayout(){
+        swipeRefreshLayout.setOnRefreshListener(new SwipeRefreshLayout.OnRefreshListener() {
+            @Override
+            public void onRefresh() {
+                executeHttpRequestWithRetrofit();
+            }
+        });
     }
 
-    private void updateUIWhenStartingHTTPRequest(){
-        this.textView.setText("Downloading...");
-    }
+    // -------------------
+    // HTTP (RxJAVA)
+    // -------------------
 
-    private void updateUIWhenStopingHTTPRequest(String response){
-        this.textView.setText(response);
-    }
-
-
-    // 4 - Execute HTTP request and update UI
     private void executeHttpRequestWithRetrofit(){
-        this.updateUIWhenStartingHTTPRequest();
-        GithubCalls.fetchUserFollowing(this, "moneemsaadaoui");
+        this.disposable = GithubStreams.streamFetchUserFollowing("moneemsaadaoui").subscribeWith(new DisposableObserver<List<GithubUser>>() {
+            @Override
+            public void onNext(List<GithubUser> users) {
+                updateUI(users);
+            }
+
+            @Override
+            public void onError(Throwable e) { }
+
+            @Override
+            public void onComplete() { }
+        });
     }
 
-
-    @Override
-    public void onResponse(@Nullable List<GithubUser> users) {
-        // 2.1 - When getting response, we update UI
-        if (users != null) this.updateUIWithListOfUsers(users);
+    private void disposeWhenDestroy(){
+        if (this.disposable != null && !this.disposable.isDisposed()) this.disposable.dispose();
     }
 
+    // -------------------
+    // UPDATE UI
+    // -------------------
 
-    // 3 - Update UI showing only name of users
-    private void updateUIWithListOfUsers(List<GithubUser> users){
-        StringBuilder stringBuilder = new StringBuilder();
-        for (GithubUser user : users){
-            stringBuilder.append("-"+user.getLogin()+"\n");
-        }
-        updateUIWhenStopingHTTPRequest(stringBuilder.toString());
+    private void updateUI(List<GithubUser> users){
+        githubUsers.clear();
+        githubUsers.addAll(users);
+        adapter.notifyDataSetChanged();
+        swipeRefreshLayout.setRefreshing(false);
     }
-
-    @Override
-    public void onFailure() {
-    this.updateUIWhenStopingHTTPRequest("ERROR xP");
     }
-}

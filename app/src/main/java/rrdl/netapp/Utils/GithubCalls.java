@@ -32,7 +32,7 @@ public class GithubCalls {
         GithubService gitHubService = GithubService.retrofit.create(GithubService.class);
 
         // 2.3 - Create the call on Github API
-        Call<List<GithubUser>> call = gitHubService.getFollowing(username);
+        Call<List<GithubUser>> call = (Call<List<GithubUser>>) gitHubService.getFollowing(username);
         // 2.4 - Start the call
         call.enqueue(new Callback<List<GithubUser>>() {
 
